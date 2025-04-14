@@ -1,0 +1,26 @@
+Results for Algorithm A
+Rules:
+r1: f1=1 -> No;length:1;support:12
+r2: f2=0 -> Yes;length:1;support:8
+r1: f2=2 -> Yes;length:1;support:10
+r2: f2=1 -> No;length:1;support:7
+r1: f3=1 -> No;length:1;support:8
+r3: f1=1 -> No;length:1;support:12
+r3: f2=0 -> No;length:1;support:8
+r5: f2=2 -> No;length:1;support:10
+r2: f2=2 -> No;length:1;support:10
+r4: f3=0 -> No;length:1;support:9
+r4: f1=2 -> Yes;length:1;support:7
+r5: f1=1 -> No;length:1;support:12
+r1: f1=1 -> Yes;length:1;support:12
+r3: f1=1 -> Yes;length:1;support:12
+r4: f1=2 -> No;length:1;support:7
+r4: f2=2 -> Yes;length:1;support:10
+r4: f2=0 -> Yes;length:1;support:8
+r2: f1=0 -> Yes;length:1;support:6
+r5: f1=2 -> No;length:1;support:7
+
+Number of rules: 19
+Max rule support: 12
+Average rule length: 1,0
+Average rule support: 9,2

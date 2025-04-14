@@ -1,0 +1,5 @@
+Number of unique rules,Minimum length,Average length,Maximum length
+22,1,1,14,2
+
+Row,Induced Rule
+r1: f1=1 -> Nor2: f2=0 -> Yesr3: f1=1 and f2=1 -> Nor1: f2=2 -> Yesr2: f2=1 -> Nor1: f3=1 -> Nor3: f1=1 -> Nor3: f2=0 -> Nor2: f1=0 and f3=1 -> Yesr5: f2=2 -> Nor2: f2=2 -> Nor4: f3=0 -> Nor4: f1=2 -> Yesr5: f1=1 -> Nor1: f1=1 -> Yesr3: f1=1 -> Yesr5: f3=0 and f2=0 -> Yesr4: f1=2 -> Nor4: f2=2 -> Yesr4: f2=0 -> Yesr2: f1=0 -> Yesr5: f1=2 -> No
