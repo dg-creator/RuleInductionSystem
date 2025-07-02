@@ -17,15 +17,14 @@ class RuleStat {
         this.support = support;
     }
 }
-
-
 public class RuleInductionGUI extends JFrame {
     private JTabbedPane tabbedPane;
-    private Map<String, JTable> tables;
-    private JButton loadButton, processButton, optimizeButton, downloadButton;
+    protected Map<String, JTable> tables;
+    private RoundedButton loadButton, processButton, optimizeButton, downloadButton, statsButton;
     private JLabel statusLabel;
     private List<File> selectedFiles;
-    private Map<String, List<String>> generatedRules;
+    protected Map<String, List<String>> generatedRules;
+    protected List<RuleStat> lastOptimizedRules = new ArrayList<>();
 
     public RuleInductionGUI() {
         UIManager.put("Button.focus", new Color(100, 149, 237)); // focus border color
@@ -45,25 +44,41 @@ public class RuleInductionGUI extends JFrame {
         Color buttonColor = new Color(70, 130, 180);
         Color buttonTextColor = Color.BLACK;
 
-        loadButton = new JButton("Load CSV Files");
+        loadButton = new RoundedButton("Load CSV Files");
         loadButton.putClientProperty("JButton.buttonType", "filled");
         loadButton.setBackground(buttonColor);
         loadButton.setForeground(buttonTextColor);
 
-        processButton = new JButton("️Generate Rules");
+        processButton = new RoundedButton("️Generate Rules");
         processButton.putClientProperty("JButton.buttonType", "filled");
         processButton.setBackground(buttonColor);
         processButton.setForeground(buttonTextColor);
 
-        optimizeButton = new JButton("Optimize Rules");
+        optimizeButton = new RoundedButton("Optimize Rules");
         optimizeButton.putClientProperty("JButton.buttonType", "filled");
         optimizeButton.setBackground(buttonColor);
         optimizeButton.setForeground(buttonTextColor);
 
-        downloadButton = new JButton("Download Data");
+        downloadButton = new RoundedButton("Download Statistics");
         downloadButton.putClientProperty("JButton.buttonType", "filled");
         downloadButton.setBackground(buttonColor);
         downloadButton.setForeground(buttonTextColor);
+
+        statsButton = new RoundedButton("Show Rule Statistics");
+        statsButton.putClientProperty("JButton.buttonType", "filled");
+        statsButton.setBackground(buttonColor);
+        statsButton.setForeground(buttonTextColor);
+        statsButton.addActionListener(e -> {
+            List<RuleStat> allRules = generatedRules.values().stream()
+                    .flatMap(list -> list.stream())
+                    .map(rule -> new RuleStat(rule,
+                            rule.contains("<no rule>") ? 0 : rule.split("->")[0].split("and").length,
+                            calculateSupport(rule)))
+                    .collect(Collectors.toList());
+
+            showRuleStatisticsDialog(allRules, lastOptimizedRules);
+        });
+
 
         JPanel controlPanel = new JPanel();
         controlPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 10, 10));
@@ -71,6 +86,7 @@ public class RuleInductionGUI extends JFrame {
         controlPanel.add(loadButton);
         controlPanel.add(processButton);
         controlPanel.add(optimizeButton);
+        controlPanel.add(statsButton);
         controlPanel.add(downloadButton);
 
         statusLabel = new JLabel("Select CSV files to start", SwingConstants.CENTER);
@@ -142,29 +158,44 @@ public class RuleInductionGUI extends JFrame {
 
 
     private void optimizeRules() {
-        Set<String> uniqueRules = new HashSet<>();
-        for (List<String> rules : generatedRules.values()) {
-            uniqueRules.addAll(rules);
+        Map<String, List<String>> rulesByRow = new LinkedHashMap<>();
+
+        // 🔹 Крок 1: згрупувати всі правила за індексом рядка (rX:)
+        for (List<String> ruleList : generatedRules.values()) {
+            for (String rule : ruleList) {
+                String rowId = rule.split(":")[0].trim(); // "r1", "r2", ...
+                rulesByRow.computeIfAbsent(rowId, k -> new ArrayList<>()).add(rule);
+            }
         }
 
-        int minLength = uniqueRules.stream()
-                .mapToInt(rule -> rule.split("->")[0].split("and").length)
-                .min()
-                .orElse(0);
+        List<RuleStat> optimizedStats = new ArrayList<>();
 
-        List<String> minimalRules = uniqueRules.stream()
-                .filter(rule -> rule.split("->")[0].split("and").length == minLength)
-                .collect(Collectors.toList());
+        // 🔹 Крок 2: для кожного рядка знайти всі правила з мінімальною довжиною
+        for (Map.Entry<String, List<String>> entry : rulesByRow.entrySet()) {
+            List<String> rowRules = entry.getValue();
 
-        List<RuleStat> ruleStats = new ArrayList<>();
-        for (String rule : minimalRules) {
-            int length = rule.split("->")[0].split("and").length;
-            int support = calculateSupport(rule);
-            ruleStats.add(new RuleStat(rule, length, support));
+            int minLength = rowRules.stream()
+                    .mapToInt(r -> r.contains("<no rule>") ? 0 : r.split("->")[0].split("and").length)
+                    .min()
+                    .orElse(0);
+
+            Set<String> seenConditions = new HashSet<>();
+
+            for (String rule : rowRules) {
+                int length = rule.contains("<no rule>") ? 0 : rule.split("->")[0].split("and").length;
+                if (length == minLength) {
+                    String conditionPart = rule.split("->")[0].trim();
+                    if (seenConditions.add(conditionPart)) {  // додає тільки якщо ще не бачили
+                        int support = calculateSupport(rule);
+                        optimizedStats.add(new RuleStat(rule, length, support));
+                    }
+                }
+            }
         }
 
-        saveOptimizedRules(ruleStats);
-        showRuleStatisticsPanel(ruleStats);
+        lastOptimizedRules = optimizedStats; // зберігаємо глобально для статистики
+        saveOptimizedRules(optimizedStats);
+        showRuleStatisticsPanel(optimizedStats);
     }
 
     private void saveOptimizedRules(List<RuleStat> rules) {
@@ -210,6 +241,7 @@ public class RuleInductionGUI extends JFrame {
         try (BufferedReader br = new BufferedReader(new FileReader(file))) {
             DefaultTableModel tableModel = new DefaultTableModel();
             JTable table = new JTable(tableModel);
+            styleTable(table);
             String line = br.readLine();
             if (line != null) {
                 String[] headers = line.split(",");
@@ -290,10 +322,10 @@ public class RuleInductionGUI extends JFrame {
         }
 
         if (conditions.isEmpty()) {
-            return String.format("r%d: <no rule> -> %s", rowIndex + 1, targetDecision);
+            return String.format("r%d: <no rule> -> d = %s", rowIndex + 1, targetDecision);
         }
 
-        return String.format("r%d: %s -> %s",
+        return String.format("r%d: %s -> d = %s",
                 rowIndex + 1,
                 String.join(" and ", conditions),
                 targetDecision.toString());
@@ -317,6 +349,7 @@ public class RuleInductionGUI extends JFrame {
         }
 
         JTable ruleTable = new JTable(data, columnNames);
+        styleTable(ruleTable);
         ruleTable.setAutoCreateRowSorter(true);
         ruleTable.setFont(new Font("SansSerif", Font.PLAIN, 13));
         ruleTable.getTableHeader().setFont(new Font("SansSerif", Font.BOLD, 14));
@@ -473,39 +506,38 @@ public class RuleInductionGUI extends JFrame {
         JOptionPane.showMessageDialog(this, scrollPane, "Generated Rules", JOptionPane.INFORMATION_MESSAGE);
     }
 
-
     private void generateStatistics() {
-        Set<String> uniqueRules = new HashSet<>();
-
-        for (List<String> ruleList : generatedRules.values()) {
-            uniqueRules.addAll(ruleList);
-        }
-        int numberOfUniqueRules = uniqueRules.size();
-
-        List<Integer> ruleLengths = uniqueRules.stream()
-                .map(rule -> rule.split("and").length)
+        List<RuleStat> allRules = generatedRules.values().stream()
+                .flatMap(List::stream)
+                .map(rule -> new RuleStat(
+                        rule,
+                        rule.contains("<no rule>") ? 0 : rule.split("->")[0].split("and").length,
+                        calculateSupport(rule)))
                 .collect(Collectors.toList());
 
-        int minLength = ruleLengths.stream().min(Integer::compareTo).orElse(0);
-        int maxLength = ruleLengths.stream().max(Integer::compareTo).orElse(0);
-        double avgLength = ruleLengths.stream().mapToInt(Integer::intValue).average().orElse(0);
+        int totalRules = allRules.size();
+        int minLength = allRules.stream().mapToInt(r -> r.length).min().orElse(0);
+        int maxLength = allRules.stream().mapToInt(r -> r.length).max().orElse(0);
+        int minSupport = allRules.stream().mapToInt(r -> r.support).min().orElse(0);
+        int maxSupport = allRules.stream().mapToInt(r -> r.support).max().orElse(0);
 
-        saveStatisticsToCSV(numberOfUniqueRules, minLength, avgLength, maxLength, uniqueRules);
-    }
+        Set<String> uniqueConditions = allRules.stream()
+                .map(r -> r.ruleText.split("->")[0].trim())
+                .collect(Collectors.toSet());
+        int uniqueCount = uniqueConditions.size();
+        int optimizedCount = lastOptimizedRules != null ? lastOptimizedRules.size() : 0;
 
-    private void saveStatisticsToCSV(int numberOfUniqueRules, int minLength, double avgLength, int maxLength, Set<String> uniqueRules) {
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter("statystyki.csv"))) {
-            writer.write("Number of unique rules,Minimum length,Average length,Maximum length\n");
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter("rule_statistics.csv"))) {
+            writer.write("Metric,Value\n");
+            writer.write("Total Rules," + totalRules + "\n");
+            writer.write("Unique Rules by Conditions," + uniqueCount + "\n");
+            writer.write("Optimized Rules," + optimizedCount + "\n");
+            writer.write("Min Rule Length," + minLength + "\n");
+            writer.write("Max Rule Length," + maxLength + "\n");
+            writer.write("Min Support," + minSupport + "\n");
+            writer.write("Max Support," + maxSupport + "\n");
 
-            writer.write(String.format("%d,%d,%.2f,%d\n", numberOfUniqueRules, minLength, avgLength, maxLength));
-
-            writer.write("\nRow,Induced Rule\n");
-            int rowNum = 1;
-            for (String rule : uniqueRules) {
-                writer.write(String.format(rule));
-            }
-
-            statusLabel.setText("Statistics saved to statystyki.csv.");
+            statusLabel.setText("Statistics saved to rule_statistics.csv.");
         } catch (IOException e) {
             statusLabel.setText("Error saving statistics to CSV.");
         }
@@ -513,6 +545,62 @@ public class RuleInductionGUI extends JFrame {
 
     private void downloadStatistics() {
         generateStatistics();
+    }
+
+    private void styleTable(JTable table) {
+        Color softLavender = new Color(245, 240, 255);
+        Color headerColor = new Color(230, 220, 250);
+
+        table.setBackground(softLavender);
+        table.setGridColor(new Color(210, 200, 240));
+        table.setForeground(Color.DARK_GRAY);
+        table.setSelectionBackground(new Color(200, 180, 240));
+        table.setSelectionForeground(Color.BLACK);
+        table.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        table.setRowHeight(24);
+
+        table.getTableHeader().setBackground(headerColor);
+        table.getTableHeader().setForeground(Color.DARK_GRAY);
+        table.getTableHeader().setFont(new Font("SansSerif", Font.BOLD, 13));
+    }
+
+    private void showRuleStatisticsDialog(List<RuleStat> rules, List<RuleStat> optimizedRules) {
+        if (rules == null || rules.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "No rules available.");
+            return;
+        }
+
+        int totalRules = rules.size();
+        int minLength = rules.stream().mapToInt(r -> r.length).min().orElse(0);
+        int maxLength = rules.stream().mapToInt(r -> r.length).max().orElse(0);
+        int minSupport = rules.stream().mapToInt(r -> r.support).min().orElse(0);
+        int maxSupport = rules.stream().mapToInt(r -> r.support).max().orElse(0);
+
+        Set<String> uniqueRules = rules.stream()
+                .map(r -> r.ruleText.split("->")[0].trim())
+                .collect(Collectors.toSet());
+
+        int uniqueCount = uniqueRules.size();
+        int optimizedCount = optimizedRules != null ? optimizedRules.size() : 0;
+
+        String statsText = String.format(
+                "📏 Rule Length:\n - Min: %d\n - Max: %d\n\n" +
+                        "📊 Support:\n - Min: %d\n - Max: %d\n\n" +
+                        "🔢 Rules:\n - Total: %d\n - Unique (by conditions): %d\n - Optimized: %d",
+                minLength, maxLength,
+                minSupport, maxSupport,
+                totalRules, uniqueCount, optimizedCount
+        );
+
+        JTextArea textArea = new JTextArea(statsText);
+        textArea.setEditable(false);
+        textArea.setFont(new Font("Monospaced", Font.PLAIN, 14));
+        textArea.setMargin(new Insets(10, 10, 10, 10));
+
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        scrollPane.setPreferredSize(new Dimension(450, 300));
+
+        JOptionPane.showMessageDialog(this, scrollPane, "📈 Rule Statistics Summary", JOptionPane.INFORMATION_MESSAGE);
     }
 
     public static void main(String[] args) {
